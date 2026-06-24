@@ -4,16 +4,12 @@ import net from 'net';
 
 const PORT = process.env.PORT || 8080;
 const TUNNEL_PORT = process.env.TUNNEL_PORT || 8081;
-const wss = new WebSocketServer({ port: PORT });
 
 // Store connected clients: userId -> { ws, username, status, server, publicIp, publicPort }
 const clients = new Map();
 
 // Tunnel registry: tunnelId -> { hostSocket, pendingClients: [socket...] }
 const tunnels = new Map();
-
-console.log(`PTG+ Relay Server running on port ${PORT}`);
-console.log(`PTG+ Tunnel Server running on port ${TUNNEL_PORT}`);
 
 // ============================================================================
 // HTTP Health Check + WebSocket Signaling (port 8080)
@@ -32,6 +28,12 @@ const server = http.createServer((req, res) => {
         res.end('PTG+ Relay Server');
     }
 });
+
+// Attach WebSocket server to the HTTP server so both share port 8080
+const wss = new WebSocketServer({ server });
+
+console.log(`PTG+ Relay Server starting on port ${PORT}`);
+console.log(`PTG+ Tunnel Server will start on port ${TUNNEL_PORT}`);
 
 wss.on('connection', (ws, req) => {
     let userId = null;
@@ -215,13 +217,13 @@ function broadcast(excludeUserId, message) {
 }
 
 // ============================================================================
-// TCP Tunnel Server (port 8081) — Phase 3
+// TCP Tunnel Server (port 8081) â€” Phase 3
 // ----------------------------------------------------------------------------
 // Protocol:
 //   Client connects, sends one of:
-//     HOST <tunnelId>\n    — host registers a tunnel (control channel)
-//     CLIENT <tunnelId>\n  — friend wants to connect to host's tunnel
-//     DATA <tunnelId>\n    — host opens a data channel in response to INCOMING
+//     HOST <tunnelId>\n    â€” host registers a tunnel (control channel)
+//     CLIENT <tunnelId>\n  â€” friend wants to connect to host's tunnel
+//     DATA <tunnelId>\n    â€” host opens a data channel in response to INCOMING
 //
 // Flow:
 //   1. Host opens persistent TCP, sends HOST, relay replies READY, keeps open
@@ -271,7 +273,7 @@ const tunnelServer = net.createServer((socket) => {
                 }
                 socket.write('READY\n');
                 console.log(`[TUNNEL] Host registered tunnel ${tunnelId}`);
-                // After READY, this socket is a control channel — wait for INCOMING triggers
+                // After READY, this socket is a control channel â€” wait for INCOMING triggers
                 // (any further data is ignored, only used to detect disconnect)
             } else if (mode === 'CLIENT') {
                 // Friend wants to connect to a tunnel
@@ -295,7 +297,7 @@ const tunnelServer = net.createServer((socket) => {
                 tunnel.pendingClients.push({ socket, leftover });
                 console.log(`[TUNNEL] Client waiting for tunnel ${tunnelId} (queue: ${tunnel.pendingClients.length})`);
 
-                // Set a timeout — if no DATA arrives in 10s, give up
+                // Set a timeout â€” if no DATA arrives in 10s, give up
                 setTimeout(() => {
                     const idx = tunnel.pendingClients.findIndex(c => c.socket === socket);
                     if (idx !== -1) {
@@ -335,7 +337,7 @@ const tunnelServer = net.createServer((socket) => {
     });
 
     socket.on('error', () => {
-        // Silent — errors are expected when sockets close
+        // Silent â€” errors are expected when sockets close
     });
 
     socket.on('close', () => {
@@ -368,4 +370,13 @@ tunnelServer.listen(TUNNEL_PORT, () => {
 
 tunnelServer.on('error', (err) => {
     console.error('Tunnel server error:', err.message);
+});
+
+// Start the HTTP + WebSocket server on the main port
+server.listen(PORT, () => {
+    console.log(`HTTP + WebSocket server listening on port ${PORT}`);
+});
+
+server.on('error', (err) => {
+    console.error('HTTP server error:', err.message);
 });
