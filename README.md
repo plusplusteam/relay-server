@@ -1,1 +1,1 @@
-ptg+ relay server 67
+ptg+ relay server tung tung 
