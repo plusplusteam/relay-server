@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: ptgplus-relay
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: TUNNEL_PORT
+        value: 8081
+# NOTE: Render free tier only exposes ONE public port (8080).
+# The TCP tunnel on port 8081 will NOT be reachable from the internet.
+# For full UPnP + hole-punch + tunnel functionality, deploy on Koyeb
+# which supports exposing multiple TCP ports on the free tier.
