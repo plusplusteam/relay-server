@@ -311,7 +311,32 @@ wss.on('connection', (ws, req) => {
     ws.on('error', (err) => {
         console.error('WebSocket error:', err.message);
     });
+
+    // Heartbeat: mark as alive, will be checked by interval below
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
 });
+
+// Heartbeat interval — check every 30 seconds, terminate dead connections
+const heartbeatInterval = setInterval(() => {
+    clients.forEach((client, id) => {
+        if (!client.ws.isAlive) {
+            console.log(`[${new Date().toISOString()}] Heartbeat timeout: ${client.username} (${id})`);
+            client.ws.terminate();
+            clients.delete(id);
+            broadcast(id, JSON.stringify({
+                type: 'friendStatus',
+                friendId: id,
+                friendName: client.username,
+                status: 'offline',
+                server: ''
+            }));
+        } else {
+            client.ws.isAlive = false;
+            try { client.ws.ping(); } catch(e) {}
+        }
+    });
+}, 30000);
 
 function broadcast(excludeUserId, message) {
     clients.forEach((client, id) => {
