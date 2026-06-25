@@ -49,16 +49,22 @@ wss.on('connection', (ws, req) => {
 
             switch (msg.type) {
                 case 'login':
-                    // Collision check — if userId is already in use by an active client,
-                    // reject the login so the client can regenerate its code (Option B)
+                    // If userId is already in use, check if it's a stale connection
+                    // (same person reconnecting after disconnect/Render restart)
                     const existing = clients.get(msg.userId);
-                    if (existing && existing.ws && existing.ws.readyState === 1) {
-                        console.log(`[${new Date().toISOString()}] Login rejected — code ${msg.userId} already in use by ${existing.username}`);
-                        ws.send(JSON.stringify({
-                            type: 'loginError',
-                            reason: 'code_in_use'
-                        }));
-                        return;  // Don't set userId/username, don't add to clients
+                    if (existing && existing.ws) {
+                        if (existing.ws.readyState === 1) {
+                            // Old connection is still "open" — could be same person reconnecting
+                            // or a genuine collision. Replace the old connection:
+                            // 1. Close the old WebSocket
+                            try { existing.ws.close(); } catch(e) {}
+                            // 2. Remove old entry
+                            clients.delete(msg.userId);
+                            console.log(`[${new Date().toISOString()}] Replaced stale session for ${msg.userId}`);
+                        } else {
+                            // Old connection is closed/closing — just remove it
+                            clients.delete(msg.userId);
+                        }
                     }
 
                     userId = msg.userId;
@@ -74,7 +80,7 @@ wss.on('connection', (ws, req) => {
                         type: 'loginSuccess',
                         userId: userId,
                         onlineCount: clients.size,
-                        tunnelPort: TUNNEL_PORT  // Tell client what port to use for tunneling
+                        tunnelPort: TUNNEL_PORT
                     }));
 
                     broadcast(userId, JSON.stringify({
