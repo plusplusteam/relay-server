@@ -109,6 +109,19 @@ wss.on('connection', (ws, req) => {
                     }));
                     break;
 
+                case 'unfriend':
+                    // Remove the requester from the target's friend list notification
+                    const unfriendTarget = clients.get(msg.friendId);
+                    if (unfriendTarget && unfriendTarget.ws.readyState === 1) {
+                        unfriendTarget.ws.send(JSON.stringify({
+                            type: 'unfriend',
+                            fromId: userId,
+                            fromName: username
+                        }));
+                    }
+                    ws.send(JSON.stringify({ type: 'unfriendSent', success: true }));
+                    break;
+
                 case 'addFriend':
                     const target = clients.get(msg.friendId);
                     if (target && target.ws.readyState === 1) {
