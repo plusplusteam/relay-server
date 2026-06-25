@@ -49,6 +49,18 @@ wss.on('connection', (ws, req) => {
 
             switch (msg.type) {
                 case 'login':
+                    // Collision check — if userId is already in use by an active client,
+                    // reject the login so the client can regenerate its code (Option B)
+                    const existing = clients.get(msg.userId);
+                    if (existing && existing.ws && existing.ws.readyState === 1) {
+                        console.log(`[${new Date().toISOString()}] Login rejected — code ${msg.userId} already in use by ${existing.username}`);
+                        ws.send(JSON.stringify({
+                            type: 'loginError',
+                            reason: 'code_in_use'
+                        }));
+                        return;  // Don't set userId/username, don't add to clients
+                    }
+
                     userId = msg.userId;
                     username = msg.username || 'Player';
                     clients.set(userId, {
@@ -71,6 +83,28 @@ wss.on('connection', (ws, req) => {
                         friendName: username,
                         status: 'online',
                         server: ''
+                    }));
+                    break;
+
+                case 'getFriendStatuses':
+                    // Client requests current status of their friends (sent right after login)
+                    // Returns the status of each friend who is currently online
+                    const friendIds = msg.friendIds || [];
+                    const statuses = [];
+                    for (const fid of friendIds) {
+                        const friend = clients.get(fid);
+                        if (friend && friend.ws.readyState === 1) {
+                            statuses.push({
+                                id: fid,	
+                                status: friend.status || 'online',
+                                server: friend.server || '',
+                                name: friend.username
+                            });
+                        }
+                    }
+                    ws.send(JSON.stringify({
+                        type: 'friendStatuses',
+                        statuses: statuses
                     }));
                     break;
 
@@ -156,6 +190,43 @@ wss.on('connection', (ws, req) => {
                     }
                     break;
 
+                case 'joinRequest':
+                    // Friend wants to join our world (for joinMode ON/HOSTING)
+                    const joinTarget = clients.get(msg.friendId);
+                    if (joinTarget && joinTarget.ws.readyState === 1) {
+                        joinTarget.ws.send(JSON.stringify({
+                            type: 'joinRequest',
+                            fromId: userId,
+                            fromName: username
+                        }));
+                        ws.send(JSON.stringify({ type: 'joinRequestSent', success: true }));
+                    } else {
+                        ws.send(JSON.stringify({ type: 'joinRequestSent', success: false, reason: 'Friend not online' }));
+                    }
+                    break;
+
+                case 'joinAccept':
+                    // Host accepts the join request — sends a world invite back
+                    const joinFriend = clients.get(msg.friendId);
+                    if (joinFriend && joinFriend.ws.readyState === 1) {
+                        joinFriend.ws.send(JSON.stringify({
+                            type: 'worldInvite',
+                            fromId: userId,
+                            fromName: username,
+                            ip: msg.ip || '',
+                            port: msg.port || 0,
+                            worldName: msg.worldName || 'Minecraft World',
+                            hostPublicIp: publicIp,
+                            hostPublicPort: publicPort,
+                            friendPublicIp: joinFriend.publicIp,
+                            friendPublicPort: joinFriend.publicPort,
+                            tunnelId: msg.tunnelId || null,
+                            tunnelPort: TUNNEL_PORT
+                        }));
+                        console.log(`[TUNNEL] Join accepted — invite sent to ${joinFriend.username}`);
+                    }
+                    break;
+
                 case 'chat':
                     const recipient = clients.get(msg.friendId);
                     if (recipient && recipient.ws.readyState === 1) {
@@ -180,6 +251,18 @@ wss.on('connection', (ws, req) => {
                     }
                     break;
 
+                case 'resourcePackInfo':
+                    // Forward resource pack list to the friend
+                    const rpFriend = clients.get(msg.friendId);
+                    if (rpFriend && rpFriend.ws.readyState === 1) {
+                        rpFriend.ws.send(JSON.stringify({
+                            type: 'resourcePackInfo',
+                            fromName: username,
+                            packs: msg.packs || []
+                        }));
+                        console.log(`[TUNNEL] Forwarded ${msg.packs ? msg.packs.length : 0} resource packs to ${rpFriend.username}`);
+                    }
+                    break;
                 case 'ping':
                     ws.send(JSON.stringify({ type: 'pong' }));
                     break;
@@ -217,13 +300,13 @@ function broadcast(excludeUserId, message) {
 }
 
 // ============================================================================
-// TCP Tunnel Server (port 8081) â€” Phase 3
+// TCP Tunnel Server (port 8081) — Phase 3
 // ----------------------------------------------------------------------------
 // Protocol:
 //   Client connects, sends one of:
-//     HOST <tunnelId>\n    â€” host registers a tunnel (control channel)
-//     CLIENT <tunnelId>\n  â€” friend wants to connect to host's tunnel
-//     DATA <tunnelId>\n    â€” host opens a data channel in response to INCOMING
+//     HOST <tunnelId>\n    — host registers a tunnel (control channel)
+//     CLIENT <tunnelId>\n  — friend wants to connect to host's tunnel
+//     DATA <tunnelId>\n    — host opens a data channel in response to INCOMING
 //
 // Flow:
 //   1. Host opens persistent TCP, sends HOST, relay replies READY, keeps open
@@ -273,7 +356,7 @@ const tunnelServer = net.createServer((socket) => {
                 }
                 socket.write('READY\n');
                 console.log(`[TUNNEL] Host registered tunnel ${tunnelId}`);
-                // After READY, this socket is a control channel â€” wait for INCOMING triggers
+                // After READY, this socket is a control channel — wait for INCOMING triggers
                 // (any further data is ignored, only used to detect disconnect)
             } else if (mode === 'CLIENT') {
                 // Friend wants to connect to a tunnel
@@ -297,7 +380,7 @@ const tunnelServer = net.createServer((socket) => {
                 tunnel.pendingClients.push({ socket, leftover });
                 console.log(`[TUNNEL] Client waiting for tunnel ${tunnelId} (queue: ${tunnel.pendingClients.length})`);
 
-                // Set a timeout â€” if no DATA arrives in 10s, give up
+                // Set a timeout — if no DATA arrives in 10s, give up
                 setTimeout(() => {
                     const idx = tunnel.pendingClients.findIndex(c => c.socket === socket);
                     if (idx !== -1) {
@@ -337,7 +420,7 @@ const tunnelServer = net.createServer((socket) => {
     });
 
     socket.on('error', () => {
-        // Silent â€” errors are expected when sockets close
+        // Silent — errors are expected when sockets close
     });
 
     socket.on('close', () => {
