@@ -244,10 +244,33 @@ wss.on('connection', (ws, req) => {
                             hostPublicPort: publicPort,
                             friendPublicIp: joinFriend.publicIp,
                             friendPublicPort: joinFriend.publicPort,
+                            localIp: msg.localIp || null,
                             tunnelId: msg.tunnelId || null,
                             tunnelPort: TUNNEL_PORT
                         }));
+                        // Send peer endpoint back to host so they can hole-punch
+                        ws.send(JSON.stringify({
+                            type: 'peerEndpoint',
+                            friendId: msg.friendId,
+                            friendName: joinFriend.username,
+                            friendPublicIp: joinFriend.publicIp,
+                            friendPublicPort: joinFriend.publicPort,
+                            hostPublicIp: publicIp,
+                            hostPublicPort: publicPort
+                        }));
                         console.log(`[TUNNEL] Join accepted — invite sent to ${joinFriend.username}`);
+                    }
+                    break;
+
+                case 'joiningNow':
+                    // Friend clicked Join on their confirmation screen — notify host
+                    const joiningHost = clients.get(msg.friendId);
+                    if (joiningHost && joiningHost.ws.readyState === 1) {
+                        joiningHost.ws.send(JSON.stringify({
+                            type: 'joiningNow',
+                            fromId: userId,
+                            fromName: username
+                        }));
                     }
                     break;
 
