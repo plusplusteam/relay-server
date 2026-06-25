@@ -39,8 +39,9 @@ wss.on('connection', (ws, req) => {
     let userId = null;
     let username = null;
 
-    // Capture public IP + port from the TCP connection itself.
-    const publicIp = req.socket.remoteAddress.replace(/^::ffff:/, '');
+    // Capture public IP from X-Forwarded-For header (Render proxy) or socket
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    const publicIp = rawIp.replace(/^::ffff:/, '').split(',')[0].trim();
     const publicPort = req.socket.remotePort;
 
     ws.on('message', (data) => {
