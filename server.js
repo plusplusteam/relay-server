@@ -296,15 +296,25 @@ wss.on('connection', (ws, req) => {
 
     ws.on('close', () => {
         if (userId) {
-            clients.delete(userId);
-            console.log(`[${new Date().toISOString()}] ${username} (${userId}) disconnected. Total: ${clients.size}`);
-            broadcast(userId, JSON.stringify({
-                type: 'friendStatus',
-                friendId: userId,
-                friendName: username,
-                status: 'offline',
-                server: ''
-            }));
+            // CRITICAL: Only broadcast offline if this is STILL the active connection.
+            // If the user reconnected with a new WebSocket, the old close event
+            // should NOT broadcast offline (they're already online with new session).
+            const current = clients.get(userId);
+            if (current && current.ws === ws) {
+                // This is still the active connection — user actually disconnected
+                clients.delete(userId);
+                console.log(`[${new Date().toISOString()}] ${username} (${userId}) disconnected. Total: ${clients.size}`);
+                broadcast(userId, JSON.stringify({
+                    type: 'friendStatus',
+                    friendId: userId,
+                    friendName: username,
+                    status: 'offline',
+                    server: ''
+                }));
+            } else {
+                // User already reconnected with a new WebSocket — don't broadcast offline
+                console.log(`[${new Date().toISOString()}] ${username} (${userId}) old connection closed (already reconnected)`);
+            }
         }
     });
 
