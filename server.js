@@ -95,10 +95,11 @@ wss.on('connection', (ws, req) => {
                         const friend = clients.get(fid);
                         if (friend && friend.ws.readyState === 1) {
                             statuses.push({
-                                id: fid,	
+                                id: fid,
                                 status: friend.status || 'online',
                                 server: friend.server || '',
-                                name: friend.username
+                                name: friend.username,
+                                joinMode: friend.joinMode || 'OFF'
                             });
                         }
                     }
@@ -180,12 +181,14 @@ wss.on('connection', (ws, req) => {
                     if (client) {
                         client.status = msg.status || 'online';
                         client.server = msg.server || '';
+                        client.joinMode = msg.joinMode || 'OFF';
                         broadcast(userId, JSON.stringify({
                             type: 'friendStatus',
                             friendId: userId,
                             friendName: username,
                             status: client.status,
-                            server: client.server
+                            server: client.server,
+                            joinMode: client.joinMode
                         }));
                     }
                     break;
