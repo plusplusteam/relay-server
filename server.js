@@ -175,6 +175,7 @@ wss.on('connection', (ws, req) => {
                             hostPublicPort: publicPort,
                             friendPublicIp: friend.publicIp,
                             friendPublicPort: friend.publicPort,
+                            localIp: msg.localIp || null,
                             // Phase 3: tunnel ID for fallback
                             tunnelId: msg.tunnelId || null,
                             tunnelPort: TUNNEL_PORT
